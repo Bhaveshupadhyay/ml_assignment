@@ -103,10 +103,13 @@ def reapply_policy(conn: sqlite3.Connection, min_conf: float, min_margin: float)
     Returns the number of rows whose status changed. Human decisions live in
     `reviewed_label`, which this never touches.
     """
-    policy = "CASE WHEN confidence >= :c AND margin >= :m THEN 'accepted' ELSE 'needs_review' END"
     with conn:
         cur = conn.execute(
-            f"UPDATE predictions SET status = {policy} WHERE status != {policy}",
+            """UPDATE predictions
+               SET status = CASE WHEN confidence >= :c AND margin >= :m
+                                 THEN 'accepted' ELSE 'needs_review' END
+               WHERE status != CASE WHEN confidence >= :c AND margin >= :m
+                                    THEN 'accepted' ELSE 'needs_review' END""",
             {"c": min_conf, "m": min_margin},
         )
     return cur.rowcount
