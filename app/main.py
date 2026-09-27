@@ -27,7 +27,13 @@ async def lifespan(app: FastAPI):
     # Load the model once at startup; fail fast if weights are missing.
     state["clf"] = TileClassifier()
     state["db"] = db.connect(config.DB_PATH)
-    log.info("model %s loaded, db %s", state["clf"].version, config.DB_PATH)
+    # Thresholds only change via config at startup, so re-applying the current policy
+    # here keeps every stored status (and /predictions, /stats) consistent with it.
+    changed = db.reapply_policy(state["db"], config.CONFIDENCE_THRESHOLD, config.MARGIN_THRESHOLD)
+    log.info(
+        "model %s loaded, db %s, %d stored statuses updated to current policy",
+        state["clf"].version, config.DB_PATH, changed,
+    )
     yield
     state["db"].close()
 
@@ -41,22 +47,34 @@ def _decode(raw: bytes) -> Image.Image:
     if len(raw) > config.MAX_UPLOAD_BYTES:
         raise HTTPException(413, "file too large")
     try:
+        # Image.open only reads the header, so size/mode are checked before any
+        # pixels are decoded — a tiny compressed file can't expand into a huge bitmap.
         img = Image.open(io.BytesIO(raw))
-        img.load()
-    except (UnidentifiedImageError, OSError):
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError):
         raise HTTPException(400, "not a readable image")
     if img.size != config.EXPECTED_SIZE:
         # The model was trained on 64x64 tiles; a different size means a different
         # upstream product (resolution/footprint) and results would not be trustworthy.
         raise HTTPException(422, f"expected {config.EXPECTED_SIZE} tile, got {img.size}")
-    if img.mode not in ("RGB", "RGBA", "L"):
-        raise HTTPException(422, f"unsupported image mode {img.mode}")
-    return img.convert("RGB")
+    if img.mode != "RGB":
+        # Grayscale/RGBA/16-bit inputs are a different product; reject rather than guess.
+        raise HTTPException(422, f"expected RGB tile, got mode {img.mode}")
+    try:
+        img.load()
+    except (OSError, Image.DecompressionBombError):
+        raise HTTPException(400, "not a readable image")
+    return img
+
+
+def decide_status(confidence: float, margin: float) -> str:
+    confident = confidence >= config.CONFIDENCE_THRESHOLD and margin >= config.MARGIN_THRESHOLD
+    return "accepted" if confident else "needs_review"
 
 
 @app.post("/classify")
 async def classify(file: UploadFile):
-    raw = await file.read()
+    # Bounded read: never pull more than the limit (+1 byte to detect overflow) into memory.
+    raw = await file.read(config.MAX_UPLOAD_BYTES + 1)
     img = _decode(raw)
     sha = hashlib.sha256(raw).hexdigest()
     clf: TileClassifier = state["clf"]
@@ -70,9 +88,6 @@ async def classify(file: UploadFile):
     pred = clf.predict(img)
     latency_ms = (time.perf_counter() - t0) * 1000
 
-    confident = (
-        pred.confidence >= config.CONFIDENCE_THRESHOLD and pred.margin >= config.MARGIN_THRESHOLD
-    )
     row = db.insert(
         state["db"],
         {
@@ -83,7 +98,7 @@ async def classify(file: UploadFile):
             "confidence": pred.confidence,
             "margin": pred.margin,
             "probs": pred.probs,
-            "status": "accepted" if confident else "needs_review",
+            "status": decide_status(pred.confidence, pred.margin),
             "latency_ms": round(latency_ms, 2),
         },
     )
@@ -108,7 +123,9 @@ def predictions(
 
 @app.get("/stats")
 def stats():
-    return {"model_version": state["clf"].version, **db.stats(state["db"])}
+    # Aggregate only the active model's rows so the numbers match the reported version.
+    version = state["clf"].version
+    return {"model_version": version, **db.stats(state["db"], version)}
 
 
 @app.get("/health")

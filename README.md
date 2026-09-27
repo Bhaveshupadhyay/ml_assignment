@@ -36,11 +36,11 @@ curl "localhost:8000/predictions?label=River&min_conf=0.9"
 curl localhost:8000/stats
 ```
 
-Tests: `uv run pytest -q`. Offline proof: `bash scripts/smoke_offline.sh`.
+Tests: `uv run pytest -q`. Offline proof: `bash scripts/smoke_offline.sh`. It blocks outbound network, uses a throwaway database, and exits non-zero on any failure.
 
 Example response:
 ```json
-{"id":1,"tile_sha256":"c7bede55…","filename":"tile_001.png","model_version":"r18-logreg-f991001c71",
+{"id":1,"tile_sha256":"c7bede55…","filename":"tile_001.png","model_version":"r18-logreg-3cf71ffd3c",
  "label":"Forest","confidence":0.9997,"margin":0.9995,"status":"accepted","latency_ms":23.5,
  "probs":{"AnnualCrop":0.0,"Forest":0.9997,"Highway":0.0,"Industrial":0.0,"Residential":0.0002,"River":0.0,"SeaLake":0.0001},
  "reviewed_label":null,"duplicate":false}

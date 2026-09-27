@@ -1,5 +1,6 @@
 {
-  "model_version": "r18-logreg-f991001c71",
+  "model_version": "r18-logreg-3cf71ffd3c",
+  "inference_revision": "1",
   "classes": [
     "AnnualCrop",
     "Forest",
@@ -9,7 +10,7 @@
     "River",
     "SeaLake"
   ],
-  "trained_at": "2026-09-27T12:22:38+00:00",
+  "trained_at": "2026-09-27T12:46:37+00:00",
   "n_train": 1050,
   "cv_accuracy": 0.9362
 }

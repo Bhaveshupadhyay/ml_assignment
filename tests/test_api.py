@@ -52,6 +52,39 @@ def test_rejects_wrong_size(client):
     assert post(client, buf.getvalue()).status_code == 422
 
 
+def test_rejects_non_rgb(client):
+    buf = io.BytesIO()
+    Image.new("RGBA", (64, 64)).save(buf, format="PNG")
+    assert post(client, buf.getvalue()).status_code == 422
+
+
+def test_rejects_oversized_upload(client, monkeypatch):
+    monkeypatch.setattr(config, "MAX_UPLOAD_BYTES", 100)
+    assert post(client, TILE.read_bytes()).status_code == 413
+
+
+def test_stats_only_count_active_model(client):
+    from app import db
+    from app.main import state
+
+    post(client, TILE.read_bytes())
+    old = client.get("/predictions").json()[0]
+    db.insert(state["db"], {**old, "tile_sha256": "x", "model_version": "old-model"})
+    s = client.get("/stats").json()
+    assert s["total"] == 1
+
+
+def test_threshold_change_reapplies_to_stored_rows(client):
+    from app import db
+    from app.main import state
+
+    post(client, TILE.read_bytes())
+    row = client.get("/predictions").json()[0]
+    assert row["status"] == "accepted"  # Forest tile, ~1.0 confidence
+    assert db.reapply_policy(state["db"], min_conf=1.01, min_margin=0.0) == 1
+    assert client.get("/predictions", params={"status": "needs_review"}).json()[0]["id"] == row["id"]
+
+
 def test_query_filters(client):
     post(client, TILE.read_bytes())
     label = client.get("/predictions").json()[0]["label"]

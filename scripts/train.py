@@ -17,7 +17,7 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
 from app import config
-from app.classifier import embed, load_backbone
+from app.classifier import INFERENCE_REVISION, embed, load_backbone
 
 src = config.DATASET_DIR / "candidate_tiles"
 classes = sorted(p.name for p in src.iterdir() if p.is_dir())
@@ -42,11 +42,16 @@ head.fit(feats, y)
 config.MODELS_DIR.mkdir(parents=True, exist_ok=True)
 joblib.dump(head, config.HEAD_PATH)
 
-# Version = hash of (backbone + head) so a stored prediction can always be traced
-# back to the exact weights that produced it.
-h = hashlib.sha256(config.BACKBONE_PATH.read_bytes() + config.HEAD_PATH.read_bytes()).hexdigest()
+# Version = hash of (backbone + head + inference code revision) so a stored prediction
+# can always be traced back to the exact weights and preprocessing that produced it.
+h = hashlib.sha256(
+    config.BACKBONE_PATH.read_bytes()
+    + config.HEAD_PATH.read_bytes()
+    + INFERENCE_REVISION.encode()
+).hexdigest()
 manifest = {
     "model_version": f"r18-logreg-{h[:10]}",
+    "inference_revision": INFERENCE_REVISION,
     "classes": list(head.classes_),
     "trained_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     "n_train": len(y),
