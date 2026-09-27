@@ -1,0 +1,15 @@
+{
+  "model_version": "r18-logreg-f991001c71",
+  "classes": [
+    "AnnualCrop",
+    "Forest",
+    "Highway",
+    "Industrial",
+    "Residential",
+    "River",
+    "SeaLake"
+  ],
+  "trained_at": "2026-09-27T12:22:38+00:00",
+  "n_train": 1050,
+  "cv_accuracy": 0.9362
+}
