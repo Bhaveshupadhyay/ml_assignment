@@ -16,6 +16,11 @@ from torchvision import models, transforms
 
 from app import config
 
+# Bump whenever preprocessing/inference code changes in a way that changes outputs.
+# It is part of model_version (so dedup never serves results from old code) and the
+# service refuses to start if the head was trained under a different revision.
+INFERENCE_REVISION = "1"
+
 # ImageNet statistics — the backbone was trained with these, so inputs must match.
 _preprocess = transforms.Compose(
     [
@@ -62,6 +67,12 @@ class TileClassifier:
         self.version: str = self.manifest["model_version"]
         # Guard against a head trained with a different class order than the manifest says.
         assert list(self.head.classes_) == self.classes, "head/manifest class mismatch"
+        trained_rev = self.manifest.get("inference_revision")
+        if trained_rev != INFERENCE_REVISION:
+            raise RuntimeError(
+                f"head trained with inference revision {trained_rev!r}, code is "
+                f"{INFERENCE_REVISION!r}; re-run scripts/train.py"
+            )
 
     def predict(self, img: Image.Image) -> Prediction:
         feats = embed(self.backbone, [img])

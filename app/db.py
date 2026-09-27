@@ -97,14 +97,35 @@ def query(
     return [_row(r) for r in conn.execute(sql, [*args, limit, offset])]
 
 
-def stats(conn: sqlite3.Connection) -> dict:
-    total = conn.execute("SELECT COUNT(*) FROM predictions").fetchone()[0]
+def reapply_policy(conn: sqlite3.Connection, min_conf: float, min_margin: float) -> int:
+    """Recompute every stored status from its confidence/margin under the current thresholds.
+
+    Returns the number of rows whose status changed. Human decisions live in
+    `reviewed_label`, which this never touches.
+    """
+    policy = "CASE WHEN confidence >= :c AND margin >= :m THEN 'accepted' ELSE 'needs_review' END"
+    with conn:
+        cur = conn.execute(
+            f"UPDATE predictions SET status = {policy} WHERE status != {policy}",
+            {"c": min_conf, "m": min_margin},
+        )
+    return cur.rowcount
+
+
+def stats(conn: sqlite3.Connection, model_version: str) -> dict:
+    total = conn.execute(
+        "SELECT COUNT(*) FROM predictions WHERE model_version = ?", (model_version,)
+    ).fetchone()[0]
     by_label = conn.execute(
         """SELECT label, COUNT(*) AS n, ROUND(AVG(confidence), 4) AS mean_conf,
                   SUM(status = 'needs_review') AS needs_review
-           FROM predictions GROUP BY label ORDER BY n DESC"""
+           FROM predictions WHERE model_version = ? GROUP BY label ORDER BY n DESC""",
+        (model_version,),
     ).fetchall()
-    by_status = conn.execute("SELECT status, COUNT(*) FROM predictions GROUP BY status").fetchall()
+    by_status = conn.execute(
+        "SELECT status, COUNT(*) FROM predictions WHERE model_version = ? GROUP BY status",
+        (model_version,),
+    ).fetchall()
     return {
         "total": total,
         "by_status": {s: n for s, n in by_status},

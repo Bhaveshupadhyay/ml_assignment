@@ -35,7 +35,7 @@ tile ─────► │ Ingest/API   │─► │ Validate   │─► │ 
 - (b) Refuse to label below a threshold.
 - (c) Always store the label, but mark it `needs_review` when uncertain.
 
-I chose **(c)**. It never throws information away, it gives the analyst a work queue, and the threshold can change later without reprocessing, because all 7 probabilities are stored. The rule is `confidence ≥ 0.90 AND (top1 − top2) ≥ 0.20`. The margin check catches "torn between two classes" cases that a high top-1 alone can hide.
+I chose **(c)**. It never throws information away, it gives the analyst a work queue, and the threshold can change later without re-running the model: confidence and margin are stored, and on startup the service re-applies the current thresholds to every stored row, so `/predictions` and `/stats` always reflect one policy. Human decisions go in `reviewed_label`, which that never touches. The rule is `confidence ≥ 0.90 AND (top1 − top2) ≥ 0.20`. The margin check catches "torn between two classes" cases that a high top-1 alone can hide.
 
 I chose 0.90 from the coverage/accuracy table in `scripts/evaluate.py`:
 
@@ -66,11 +66,11 @@ I store **a reference, not the image**. Tiles live wherever they were ingested f
 
 I think (4) and (5) are what analysts actually want. But the data can't support them yet, so I built (1)–(2) and list the rest as a question.
 
-**Idempotency.** Re-sending the same bytes with the same model returns the stored row. After a model upgrade, the same tile gets a new row, so both versions' answers can be compared.
+**Idempotency.** Re-sending the same bytes with the same model returns the stored row. After a model upgrade, the same tile gets a new row, so both versions' answers can be compared. `model_version` hashes the backbone weights, the head, *and* an `INFERENCE_REVISION` constant for preprocessing code. If the preprocessing changes, the version changes too, and the service won't start with a head trained under the old preprocessing. `/stats` only counts rows from the active model version.
 
 **SQLite versus Postgres.** SQLite needs no server, keeps everything in one file (easy to back up and carry off the machine), and in WAL mode readers don't block the writer. It's the right fit for one box. It becomes a limitation with several writer processes or large-scale spatial queries.
 
-**Rejecting instead of guessing.** Inputs that aren't 64×64 RGB are rejected (422) rather than resized. A different tile size means a different upstream product (resolution/footprint), and the model's outputs on it would be quietly meaningless.
+**Rejecting instead of guessing.** Inputs that aren't 64×64 RGB are rejected (422) rather than resized or converted. The size and mode are checked from the header before any pixels are decoded, and uploads are read with a byte cap, so an oversized file or a decompression bomb can't exhaust memory. A different tile size means a different upstream product (resolution/footprint), and the model's outputs on it would be quietly meaningless.
 
 ## 3. Assumptions
 - Tiles arrive as 64×64 RGB PNGs, like the provided data, one at a time or in modest volumes.
