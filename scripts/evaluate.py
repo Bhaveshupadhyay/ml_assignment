@@ -48,9 +48,10 @@ for c in C:
     print(f"{c:<12} " + " ".join(f"{int(((y == c) & (yhat == k)).sum()):>6}" for k in C))
 
 print("\nconfidence threshold -> coverage (auto-accepted) / accuracy on accepted / accuracy on flagged")
-print(f"(margin threshold fixed at {config.MARGIN_THRESHOLD})")
+print(f"  no review policy: coverage=1.00  acc_accepted={correct.mean():.3f}")
+print(f"(every row below applies the API's margin check too: margin >= {config.MARGIN_THRESHOLD})")
 for t in [0.0, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95]:
-    acc = (conf >= t) & (margin >= (config.MARGIN_THRESHOLD if t > 0 else 0))
+    acc = (conf >= t) & (margin >= config.MARGIN_THRESHOLD)
     flagged = ~acc
     a = correct[acc].mean() if acc.any() else float("nan")
     b = correct[flagged].mean() if flagged.any() else float("nan")

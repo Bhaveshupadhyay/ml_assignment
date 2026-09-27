@@ -41,7 +41,7 @@ I chose 0.90 from the coverage/accuracy table in `scripts/evaluate.py`:
 
 | threshold | auto-accepted | accuracy on accepted |
 |---|---|---|
-| none | 100% | 93.3% |
+| no review policy | 100% | 93.3% |
 | 0.80 | 90% | 95.8% |
 | **0.90** | **86%** | **97.8%** |
 | 0.95 | 80% | 99.4% |
